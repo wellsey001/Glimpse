@@ -52,10 +52,19 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.TilesOverlay
 import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToInt
+
+/** Inverts map tile colours so the map suits dark mode. */
+private val invertedTiles = android.graphics.ColorMatrixColorFilter(
+    floatArrayOf(
+        -1f, 0f, 0f, 0f, 255f,
+        0f, -1f, 0f, 0f, 255f,
+        0f, 0f, -1f, 0f, 255f,
+        0f, 0f, 0f, 1f, 0f,
+    )
+)
 
 private class Cluster(val center: GeoPoint, val items: List<MediaItem>)
 
@@ -161,7 +170,7 @@ fun MapScreen(
     }
 
     LaunchedEffect(dark) {
-        mapView.overlayManager.tilesOverlay.setColorFilter(if (dark) TilesOverlay.INVERTED_COLORS else null)
+        mapView.overlayManager.tilesOverlay.setColorFilter(if (dark) invertedTiles else null)
         mapView.invalidate()
     }
 
