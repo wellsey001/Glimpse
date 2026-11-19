@@ -16,7 +16,12 @@ import com.wellsey.glimpse.data.LocationIndex
 import com.wellsey.glimpse.data.MediaItem
 import com.wellsey.glimpse.data.MediaRepository
 import com.wellsey.glimpse.data.SettingsStore
+import com.wellsey.glimpse.ui.editor.decodeBitmap
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -81,6 +86,31 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     val requests = _requests.receiveAsFlow()
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages: SharedFlow<String> = _messages
+
+    // --- Editor preview, decoded ahead of time so Edit opens instantly ---
+    private var previewUri: Uri? = null
+    private var previewJob: Deferred<Bitmap?>? = null
+
+    /** Starts (or reuses) decoding the editor's working copy of [item]. */
+    fun editPreview(item: MediaItem): Deferred<Bitmap?> {
+        val existing = previewJob
+        if (existing != null && previewUri == item.uri && !existing.isCancelled) return existing
+        existing?.cancel()
+        previewUri = item.uri
+        val job = viewModelScope.async(Dispatchers.IO) {
+            runCatching { decodeBitmap(getApplication(), item.uri, EDIT_PREVIEW_MAX) }.getOrNull()
+        }
+        previewJob = job
+        return job
+    }
+
+    /** The decoded preview for [uri] if it's already finished, else null. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun readyPreview(uri: Uri): Bitmap? {
+        val job = previewJob ?: return null
+        if (previewUri != uri || !job.isCompleted || job.isCancelled) return null
+        return runCatching { job.getCompleted() }.getOrNull()
+    }
 
     private var started = false
 
@@ -229,6 +259,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        const val EDIT_PREVIEW_MAX = 1440
+
         fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
 
         fun folderName(relativePath: String) =

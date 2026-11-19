@@ -61,7 +61,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.wellsey.glimpse.data.MediaItem
+import com.wellsey.glimpse.data.MediaThumb
 import com.wellsey.glimpse.ui.GalleryViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -82,7 +84,6 @@ private val aspectOptions = listOf(
     AspectOption("9:16", 9f / 16f),
 )
 
-private const val PREVIEW_MAX = 1600
 private const val SAVE_MAX = 4096
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,10 +92,9 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val source by produceState<Bitmap?>(null, item.uri) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { decodeBitmap(context, item.uri, PREVIEW_MAX) }.getOrNull()
-        }
+    // Usually already decoded: the viewer prepares it while you look at the photo.
+    val source by produceState(vm.readyPreview(item.uri), item.uri) {
+        if (value == null) value = vm.editPreview(item).await()
     }
 
     var tool by remember { mutableStateOf(Tool.Crop) }
@@ -184,7 +184,14 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
             ) {
                 val bmp = displayed
                 if (bmp == null) {
-                    CircularProgressIndicator()
+                    // Show the cached thumbnail straight away while the full preview loads.
+                    AsyncImage(
+                        model = MediaThumb(item.uri, item.dateModified),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
                 } else {
                     Image(
                         bitmap = bmp.asImageBitmap(),

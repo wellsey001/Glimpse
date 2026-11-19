@@ -55,6 +55,7 @@ import com.wellsey.glimpse.ui.GalleryViewModel
 import com.wellsey.glimpse.ui.ViewerMode
 import com.wellsey.glimpse.ui.components.shareItems
 import com.wellsey.glimpse.util.formatDateTime
+import kotlinx.coroutines.delay
 
 @Composable
 fun ViewerScreen(
@@ -74,6 +75,15 @@ fun ViewerScreen(
     var chrome by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
     val current = items.getOrNull(pager.currentPage.coerceAtMost(items.lastIndex))
+
+    // Get the editor's copy ready in the background, so tapping Edit is instant.
+    LaunchedEffect(pager.settledPage, items) {
+        val settled = items.getOrNull(pager.settledPage) ?: return@LaunchedEffect
+        if (!settled.isVideo) {
+            delay(350) // skip photos you're only swiping past
+            vm.editPreview(settled)
+        }
+    }
 
     // Hide the status and navigation bars along with our own controls.
     val view = LocalView.current
