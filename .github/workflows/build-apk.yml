@@ -1,10 +1,16 @@
 name: Build APK
 
-# Builds an installable APK on GitHub's servers whenever you push,
-# or when you press "Run workflow" on the Actions tab.
+# Builds an installable APK on GitHub's servers whenever you push to main
+# (or when you press "Run workflow" on the Actions tab), checks it, and
+# publishes it on the repository's Releases page so you can install it
+# straight from your phone.
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -23,11 +29,27 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk Glimpse.apk
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk Glimpse.apk
+      - name: Check the APK
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          echo "== Signature =="
+          "$BT/apksigner" verify --verbose --print-certs Glimpse.apk
+          echo "== Package info =="
+          "$BT/aapt" dump badging Glimpse.apk | grep -E "package:|sdkVersion|targetSdkVersion|native-code|application-label:"
 
       - uses: actions/upload-artifact@v4
         with:
           name: Glimpse-apk
           path: Glimpse.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v0.1.${{ github.run_number }}"
+          gh release create "$TAG" Glimpse.apk \
+            --title "Glimpse $TAG" \
+            --notes "Built from ${GITHUB_SHA::7}. On your phone, tap Glimpse.apk below to download and install." \
+            --latest
