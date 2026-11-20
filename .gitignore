@@ -8,3 +8,7 @@
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# Signing key: never commit it; it comes from a GitHub secret at build time
+/signing/
+*.jks
