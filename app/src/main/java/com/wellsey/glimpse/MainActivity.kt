@@ -48,6 +48,7 @@ import com.wellsey.glimpse.ui.ViewerMode
 import com.wellsey.glimpse.ui.editor.EditorScreen
 import com.wellsey.glimpse.ui.screens.Access
 import com.wellsey.glimpse.ui.screens.CollectionScreen
+import com.wellsey.glimpse.ui.screens.FoldersScreen
 import com.wellsey.glimpse.ui.screens.HomeScreen
 import com.wellsey.glimpse.ui.screens.PermissionScreen
 import com.wellsey.glimpse.ui.screens.TrashScreen
@@ -91,6 +92,7 @@ private object Routes {
     const val PLACE = "place"
     const val VIEWER = "viewer"
     const val EDITOR = "editor"
+    const val FOLDERS = "folders"
 }
 
 @Composable
@@ -203,7 +205,11 @@ private fun Gallery(vm: GalleryViewModel) {
                     vm.openCollection(title, items)
                     nav.navigate(Routes.PLACE)
                 },
+                onChooseFolders = { nav.navigate(Routes.FOLDERS) },
             )
+        }
+        composable(Routes.FOLDERS) {
+            FoldersScreen(vm, onBack = { nav.popBackStack() })
         }
         composable(
             Routes.ALBUM,
@@ -235,7 +241,7 @@ private fun Gallery(vm: GalleryViewModel) {
             )
         }
         composable(Routes.VIDEOS) {
-            val media by vm.media.collectAsStateWithLifecycle()
+            val media by vm.visibleMedia.collectAsStateWithLifecycle()
             val items = remember(media) { media.filter { it.isVideo } }
             CollectionScreen(
                 vm = vm,

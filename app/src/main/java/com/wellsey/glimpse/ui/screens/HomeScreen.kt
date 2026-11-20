@@ -75,6 +75,7 @@ fun HomeScreen(
     onOpenVideos: () -> Unit,
     onOpenTrash: () -> Unit,
     onOpenPlace: (String, List<MediaItem>) -> Unit,
+    onChooseFolders: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(HomeTab.Photos) }
     val photosGrid = rememberLazyGridState()
@@ -99,8 +100,8 @@ fun HomeScreen(
                 .padding(bottom = padding.calculateBottomPadding())
         ) {
             when (tab) {
-                HomeTab.Photos -> PhotosTab(vm, access, onRequestMoreAccess, onOpen, photosGrid)
-                HomeTab.Albums -> AlbumsScreen(vm, onOpenAlbum, onOpenFavourites, onOpenVideos, onOpenTrash)
+                HomeTab.Photos -> PhotosTab(vm, access, onRequestMoreAccess, onOpen, photosGrid, onChooseFolders)
+                HomeTab.Albums -> AlbumsScreen(vm, onOpenAlbum, onOpenFavourites, onOpenVideos, onOpenTrash, onChooseFolders)
                 HomeTab.Map -> MapScreen(
                     vm,
                     onOpenPlace = onOpenPlace,
@@ -120,9 +121,11 @@ private fun PhotosTab(
     onRequestMoreAccess: () -> Unit,
     onOpen: (List<MediaItem>, Int) -> Unit,
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    onChooseFolders: () -> Unit,
 ) {
     val context = LocalContext.current
-    val media by vm.media.collectAsStateWithLifecycle()
+    val media by vm.visibleMedia.collectAsStateWithLifecycle()
+    val hidden by vm.settings.hiddenFolders.collectAsStateWithLifecycle()
     val loaded by vm.loaded.collectAsStateWithLifecycle()
     val columns by vm.settings.columns.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf(false) }
@@ -141,12 +144,16 @@ private fun PhotosTab(
         items = media,
         onOpen = onOpen,
         loading = !loaded,
-        emptyText = "No photos or videos found",
+        emptyText = if (hidden.isNotEmpty()) "No photos in the folders you've chosen. Tap ⋮ → Choose folders." else "No photos or videos found",
         windowInsets = WindowInsets(0.dp),
         gridState = gridState,
         actions = {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (hidden.isEmpty()) "Choose folders…" else "Choose folders… (${hidden.size} hidden)") },
+                    onClick = { menu = false; onChooseFolders() },
+                )
                 DropdownMenuItem(
                     text = { Text("Bigger thumbnails") },
                     enabled = columns > SettingsStore.MIN_COLUMNS,

@@ -36,6 +36,20 @@ class SettingsStore(context: Context) {
     private val _columns = MutableStateFlow(prefs.getInt("columns", 4))
     val columns: StateFlow<Int> = _columns.asStateFlow()
 
+    /** Folders (MediaStore bucket ids) left out of Photos, Search, Map and Videos. */
+    private val _hiddenFolders = MutableStateFlow(
+        prefs.getStringSet("hiddenFolders", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+    )
+    val hiddenFolders: StateFlow<Set<Long>> = _hiddenFolders.asStateFlow()
+
+    fun setHiddenFolders(ids: Set<Long>) {
+        _hiddenFolders.value = ids
+        prefs.edit().putStringSet("hiddenFolders", ids.map { it.toString() }.toSet()).apply()
+    }
+
+    fun setFolderShown(id: Long, shown: Boolean) =
+        setHiddenFolders(if (shown) _hiddenFolders.value - id else _hiddenFolders.value + id)
+
     fun setColumns(value: Int) {
         val v = value.coerceIn(MIN_COLUMNS, MAX_COLUMNS)
         _columns.value = v

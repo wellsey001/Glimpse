@@ -114,7 +114,7 @@ fun MapScreen(
     onOpenSingle: (MediaItem) -> Unit,
 ) {
     val context = LocalContext.current
-    val media by vm.media.collectAsStateWithLifecycle()
+    val media by vm.visibleMedia.collectAsStateWithLifecycle()
     val geo by vm.geo.collectAsStateWithLifecycle()
     val progress by vm.geoProgress.collectAsStateWithLifecycle()
     val dark = isSystemInDarkTheme()

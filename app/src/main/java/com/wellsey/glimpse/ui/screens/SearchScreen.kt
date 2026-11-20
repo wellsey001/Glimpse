@@ -46,7 +46,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(vm: GalleryViewModel, onOpen: (List<MediaItem>, Int) -> Unit) {
-    val media by vm.media.collectAsStateWithLifecycle()
+    val media by vm.visibleMedia.collectAsStateWithLifecycle()
     val favorites by vm.favorites.ids.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
 

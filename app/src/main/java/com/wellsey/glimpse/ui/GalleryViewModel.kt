@@ -59,6 +59,11 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val _trash = MutableStateFlow<List<MediaItem>>(emptyList())
     val trash: StateFlow<List<MediaItem>> = _trash.asStateFlow()
 
+    /** Everything except the folders you've chosen to hide. Used by Photos, Search, Map and Videos. */
+    val visibleMedia: StateFlow<List<MediaItem>> = combine(media, settings.hiddenFolders) { m, hidden ->
+        if (hidden.isEmpty()) m else m.filter { it.bucketId !in hidden }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     val albums: StateFlow<List<Album>> = media.map(::buildAlbums)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
