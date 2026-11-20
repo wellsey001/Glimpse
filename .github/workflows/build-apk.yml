@@ -7,6 +7,10 @@ name: Build APK
 on:
   push:
     branches: [main]
+    # Text-only changes (like this README) don't need a new APK.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:

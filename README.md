@@ -1,68 +1,91 @@
-# Glimpse — a local photo gallery for Android
+<p align="center">
+  <img src="docs/icon.png" width="112" alt="Glimpse icon">
+</p>
 
-A fast, private replacement for the Google Photos app's on-device gallery.
-Backups are left to Immich; Glimpse only works with what's on the phone.
+<h1 align="center">Glimpse</h1>
+
+<p align="center">
+  A fast, private photo gallery for Android: a replacement for the Google Photos app that works entirely on your phone.
+</p>
+
+<p align="center">
+  <a href="https://github.com/wellsey001/Glimpse/releases/latest"><img src="https://img.shields.io/github/v/release/wellsey001/Glimpse?label=download&color=7A3BC6" alt="Latest release"></a>
+  <a href="https://github.com/wellsey001/Glimpse/actions/workflows/build-apk.yml"><img src="https://github.com/wellsey001/Glimpse/actions/workflows/build-apk.yml/badge.svg" alt="Build status"></a>
+  <img src="https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white" alt="Android 11+">
+</p>
+
+---
+
+## Why Glimpse?
+
+- **Local first.** Glimpse shows what's on your phone and nothing else. There's no account, no cloud and no sign-in.
+- **Pairs with Immich.** Leave backups to your own Immich server; Glimpse is just the everyday gallery.
+- **Quick.** Thumbnails come from Android's own cache, and the editor prepares photos in the background so it opens instantly.
+
+## Install
+
+1. On your phone, open the **[latest release](https://github.com/wellsey001/Glimpse/releases/latest)** and tap **Glimpse.apk**.
+2. If Android asks, allow your browser to *install unknown apps*.
+3. Open Glimpse and tap **Allow access** to your photos and videos.
+
+**Make it your default gallery:** open a photo from any app, choose **Glimpse**, then tap **Always**. You can change this later in *Settings → Apps → Default apps*.
+
+Updates install over the top of the old version, keeping your favourites. To be told about new versions, tap **Watch → Custom → Releases** on this page in the GitHub app.
 
 ## Features
 
-- **Photos**: timeline of every photo and video, grouped by day. Pinch the grid to change thumbnail size.
-- **Albums**: one per folder (Camera and Screenshots first), plus Favourites, Videos and Trash.
-- **Viewer**: swipe between items, pinch and double-tap to zoom, and play videos. Tap to hide the controls.
-- **Organise**: long-press to multi-select (tap a date header to select the whole day). You can then share, favourite, move to trash, or move or copy to another album, including a new one.
-- **Trash**: uses Android's own trash, so items are deleted after 30 days. You can restore items or empty the trash.
-- **Details**: date, size, resolution, folder, camera, exposure settings and GPS location, with a button to open the location in a maps app.
-- **Search**: by file name, album, month, year, or words like `videos`, `favourites`, `screenshots` and `camera`. Every word must match, for example `camera june 2024`.
-- **Map**: all geotagged photos on an OpenStreetMap map, grouped into bubbles. Tap a bubble to see the photos taken there.
-- **Edit**: crop (free or fixed ratios), rotate, flip, brightness, contrast, saturation and warmth, plus 7 filters. Press and hold the preview to compare with the original. Edits are saved as a copy and the original is never changed.
-- **Default app**: Glimpse can be picked for "Open with" on any photo or video, and as the phone's gallery app.
+| | |
+|---|---|
+| **Photos** | Every photo and video, grouped by day. Pinch the grid to make thumbnails bigger or smaller. |
+| **Albums** | One per folder, with Camera and Screenshots first, plus Favourites, Videos and Trash. |
+| **Viewer** | Swipe between items, pinch and double-tap to zoom, play videos. Tap to hide the controls. |
+| **Organise** | Long-press to select (tap a date to select the whole day), then share, favourite, move to trash, or move/copy to another album or a new one. |
+| **Trash** | Uses Android's own trash: items stay for 30 days and can be restored. |
+| **Details** | Date, size, resolution, folder, camera, exposure settings and GPS location, with an *Open in maps* button. |
+| **Search** | By file name, album, month, year or type. Try `camera june 2024`, `videos`, `favourites` or `screenshots`. |
+| **Map** | Geotagged photos on an OpenStreetMap map, grouped into bubbles. Tap one to see the photos taken there. |
+| **Edit** | Crop (free or fixed ratios), rotate, flip, brightness, contrast, saturation, warmth and 7 filters. Press and hold to compare with the original. Edits are saved as a copy, so originals are never touched. |
 
-## Build and install
+## Permissions and privacy
 
-1. Install [Android Studio](https://developer.android.com/studio) (any 2024 or later version).
-2. **File → Open** and choose this `Glimpse` folder. Let Gradle sync. It downloads everything it needs, which takes a few minutes the first time.
-3. On your phone, turn on **Developer options → USB debugging** and plug it in, or use Wireless debugging.
-4. Press **Run ▶**.
+| Permission | Why |
+|---|---|
+| Photos and videos | To show your library. On Android 14+ you can choose to share only some photos. |
+| Photo location | To read GPS data for the map and the details panel. |
+| Internet | Only to download map tiles from OpenStreetMap. Your photos are never uploaded. |
+| Media management *(optional)* | Skips Android's confirmation pop-up when you move or delete photos. Turn it on from **⋮ → Skip confirm prompts…** |
 
-If Android Studio offers to upgrade the Android Gradle Plugin or Kotlin, it's safe to accept.
+Favourites are stored inside Glimpse, which makes tapping the heart instant. They don't sync to Immich or Google.
 
-### Get an APK without Android Studio
+## Troubleshooting
 
-The project includes a GitHub Actions workflow (`.github/workflows/build-apk.yml`).
-1. Create a new repository on GitHub and upload this folder to it, including the hidden `.github` folder.
-2. Open the repository's **Actions** tab. The **Build APK** workflow runs automatically and takes about 5 minutes.
-3. Open the finished run and download **Glimpse-apk** under *Artifacts*. Unzip it to get `Glimpse.apk`.
-4. Copy `Glimpse.apk` to your phone and tap it to install. Allow *Install unknown apps* for your browser or file manager when Android asks.
+- **"App not installed"**: Glimpse needs Android 11 or newer. If you installed a build from before 20 November 2026, uninstall it once first, because it was signed with a different key.
+- **Blocked by Play Protect**: tap **More details → Install anyway**.
+- **Map is empty**: the first visit scans your photos for locations; the progress is shown at the top. Photos taken with location turned off won't appear.
 
-In Android Studio you can do the same with **Build → Build App Bundle(s) / APK(s) → Build APK(s)**.
+## Building it yourself
 
-The APK is signed with a debug key so it installs straight away. Make a proper signing key before sharing it with anyone else.
+Every push to `main` builds a signed APK with GitHub Actions and publishes it under **Releases**. To build locally, open the folder in Android Studio and press **Run**.
 
-### Make it your default gallery
+<details>
+<summary>Tech and project layout</summary>
 
-Open a photo from any app (for example a file manager or WhatsApp), choose **Glimpse**, and then tap **Always**.
-To change it later, go to **Settings → Apps → Default apps**.
-You can also disable the Google Photos app (**Settings → Apps → Photos → Disable**) so it no longer appears.
-
-## Notes
-
-- **Requires Android 11 or later.** This allows Glimpse to use the system trash and folder moves.
-- **Confirm prompts**: Android asks for confirmation before Glimpse trashes or moves files created by other apps. On Android 12 and later you can skip these prompts with **⋮ → Skip confirm prompts…**, which turns on *Media management* for Glimpse.
-- **Favourites** are stored by Glimpse itself. This makes starring instant, but the favourites don't sync to Immich or Google.
-- **Map**: the first time you open it, Glimpse scans your photos for GPS data. The results are cached, so later visits are instant. Map tiles come from OpenStreetMap, which needs an internet connection.
-- **Edits** are saved at up to 4096 px on the longest side, in the same album as the original.
-
-## Code layout
+Kotlin and Jetpack Compose (Material 3, with your wallpaper colours on Android 12+), Coil for images, Media3 ExoPlayer for video, osmdroid for the map, and AndroidX ExifInterface for photo details.
 
 ```
 app/src/main/java/com/wellsey/glimpse/
   MainActivity.kt         permissions, navigation, system confirm dialogs
-  GlimpseApp.kt             image loader + map setup
   data/                   MediaStore access, favourites, thumbnails, EXIF and location index
   ui/GalleryViewModel.kt  app state and actions
-  ui/components/          photo grid, selection bar, album picker
-  ui/screens/             Photos, Albums, Search, Map, Trash, permission screen
-  ui/viewer/              full-screen viewer, zoom, video, details sheet
-  ui/editor/              editor screen, crop frame, colour maths
+  ui/screens/             Photos, Albums, Search, Map, Trash
+  ui/viewer/              full-screen viewer, zoom, video, details
+  ui/editor/              editor, crop frame, colour adjustments
 ```
 
-To rename the app, change `app_name` in `res/values/strings.xml`. To change the package name, also change `applicationId` in `app/build.gradle.kts`.
+Signing uses the `SIGNING_KEYSTORE_BASE64` and `SIGNING_PASSWORD` repository secrets. Without them, builds still work but use a temporary key.
+</details>
+
+## More apps
+
+- **[Burrow](https://github.com/wellsey001/Burrow)**: file manager with storage cleanup
+- **[Folio for Android](https://github.com/wellsey001/Folio-For-Android)**: PDF reader with signing, forms and highlighting
