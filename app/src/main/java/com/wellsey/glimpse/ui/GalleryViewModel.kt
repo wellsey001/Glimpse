@@ -20,6 +20,7 @@ import com.wellsey.glimpse.ui.editor.decodeBitmap
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import coil.imageLoader
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
@@ -257,9 +258,46 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 // Some folders don't accept new images; fall back to our own album.
                 uri = repo.saveJpeg(bitmap, "${base}_edited.jpg", "Pictures/Glimpse/", System.currentTimeMillis())
             }
+            // Keep the original's date, camera details and location on the copy.
+            if (uri != null && !source.isExternal) repo.copyExif(source.uri, uri, bitmap.width, bitmap.height)
             message(if (uri != null) "Saved a copy" else "Couldn't save the edit")
             refresh()
             onSaved(uri)
+        }
+    }
+
+    /** Whether "Replace original" is possible: Glimpse can re-save JPEG, PNG and WebP photos. */
+    fun canReplace(item: MediaItem): Boolean =
+        !item.isExternal && item.mimeType in setOf("image/jpeg", "image/png", "image/webp")
+
+    /** Only a rotate/flip of a JPEG: done by changing its orientation tag, with no quality loss. */
+    fun canRotateLosslessly(item: MediaItem) = !item.isExternal && item.mimeType == "image/jpeg"
+
+    /**
+     * Saves over the original photo. Android asks you to confirm for photos made by other apps.
+     * Pass [bitmap] for a full re-save, or null with [rotation]/[flip] for a lossless rotate.
+     */
+    fun replaceOriginal(source: MediaItem, bitmap: Bitmap?, rotation: Int, flip: Boolean, onDone: (Boolean) -> Unit) {
+        request(repo.writeRequest(listOf(source.uri))) { ok ->
+            if (!ok) {
+                onDone(false); return@request
+            }
+            viewModelScope.launch {
+                val saved = if (bitmap != null) repo.overwrite(source, bitmap)
+                else repo.rotateLossless(source, rotation, flip)
+                if (saved) {
+                    // Forget cached pictures of the old version so the new one shows everywhere.
+                    getApplication<Application>().imageLoader.memoryCache?.clear()
+                    previewJob?.cancel(); previewJob = null; previewUri = null
+                    val fresh = repo.loadMedia()
+                    _media.value = fresh
+                    viewerItems = viewerItems.map { v -> fresh.firstOrNull { it.id == v.id } ?: v }
+                    message("Saved")
+                } else {
+                    message("Couldn't save over the original. Try Save as copy.")
+                }
+                onDone(saved)
+            }
         }
     }
 

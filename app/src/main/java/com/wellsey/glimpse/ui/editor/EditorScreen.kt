@@ -108,6 +108,7 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
     var showOriginal by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
+    var showSave by remember { mutableStateOf(false) }
 
     val edited = rotation != 0 || flip || cropRect != FULL_RECT || !adjust.isDefault || filter != PhotoFilter.None
 
@@ -130,6 +131,54 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
 
     BackHandler { tryClose() }
 
+    // A rotate or flip on its own can be saved without re-compressing the photo.
+    val onlyRotated = cropRect == FULL_RECT && adjust.isDefault && filter == PhotoFilter.None
+
+    /** Builds the finished picture at full size (up to SAVE_MAX), or null if it fails. */
+    suspend fun render(): android.graphics.Bitmap? = withContext(Dispatchers.Default) {
+        runCatching {
+            val full = decodeBitmap(context, item.uri, SAVE_MAX)
+            val t = transform(full, rotation, flip)
+            val c = crop(t, cropRect)
+            if (adjust.isDefault && filter == PhotoFilter.None) c else applyColor(c, matrix)
+        }.getOrNull()
+    }
+
+    fun saveCopy() {
+        showSave = false
+        saving = true
+        scope.launch {
+            val result = render()
+            if (result == null) {
+                saving = false
+                vm.message("Couldn't edit this photo")
+            } else {
+                vm.saveEdited(item, result) { uri ->
+                    saving = false
+                    if (uri != null) onClose()
+                }
+            }
+        }
+    }
+
+    fun replaceOriginal() {
+        showSave = false
+        saving = true
+        scope.launch {
+            if (onlyRotated && vm.canRotateLosslessly(item)) {
+                vm.replaceOriginal(item, null, rotation, flip) { ok -> saving = false; if (ok) onClose() }
+            } else {
+                val result = render()
+                if (result == null) {
+                    saving = false
+                    vm.message("Couldn't edit this photo")
+                } else {
+                    vm.replaceOriginal(item, result, 0, false) { ok -> saving = false; if (ok) onClose() }
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -140,29 +189,8 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
                 actions = {
                     TextButton(
                         enabled = edited && !saving && source != null,
-                        onClick = {
-                            saving = true
-                            scope.launch {
-                                val result = withContext(Dispatchers.Default) {
-                                    runCatching {
-                                        val full = decodeBitmap(context, item.uri, SAVE_MAX)
-                                        val t = transform(full, rotation, flip)
-                                        val c = crop(t, cropRect)
-                                        applyColor(c, matrix)
-                                    }.getOrNull()
-                                }
-                                if (result == null) {
-                                    saving = false
-                                    vm.message("Couldn't edit this photo")
-                                } else {
-                                    vm.saveEdited(item, result) { uri ->
-                                        saving = false
-                                        if (uri != null) onClose()
-                                    }
-                                }
-                            }
-                        },
-                    ) { Text("Save copy") }
+                        onClick = { showSave = true },
+                    ) { Text("Save") }
                 },
             )
         },
@@ -316,6 +344,36 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showSave) {
+        val canReplace = vm.canReplace(item)
+        val lossless = onlyRotated && vm.canRotateLosslessly(item)
+        val big = item.width.toLong() * item.height > SAVE_MAX.toLong() * SAVE_MAX * 3 / 4
+        AlertDialog(
+            onDismissRequest = { showSave = false },
+            title = { Text("Save changes") },
+            text = {
+                Text(
+                    when {
+                        !canReplace -> "This kind of photo (${item.mimeType.substringAfter('/').uppercase()}) can only be saved as a copy. " +
+                            "The original stays as it is."
+                        lossless -> "Replace original turns the photo without re-saving it, so there's no loss of quality. " +
+                            "Save as copy keeps the original and adds a new photo next to it."
+                        else -> "Replace original saves your edits over the photo, keeping its date, camera details and location. " +
+                            (if (big) "Very large photos are saved at up to $SAVE_MAX pixels wide. " else "") +
+                            "Save as copy keeps the original and adds a new photo next to it."
+                    }
+                )
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { saveCopy() }) { Text("Save as copy") }
+                    if (canReplace) TextButton(onClick = { replaceOriginal() }) { Text("Replace original") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showSave = false }) { Text("Cancel") } },
+        )
     }
 
     if (confirmDiscard) {

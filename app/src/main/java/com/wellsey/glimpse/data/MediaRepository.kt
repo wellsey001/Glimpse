@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -220,6 +221,101 @@ class MediaRepository(context: Context) {
         } catch (e: Exception) {
             uri?.let { runCatching { resolver.delete(it, null, null) } }
             null
+        }
+    }
+
+    // ------------------------------------------------------------ saving over the original
+
+    /** Photo details worth keeping when a photo is re-saved (date, camera, location…). */
+    private val keptExifTags = listOf(
+        ExifInterface.TAG_DATETIME, ExifInterface.TAG_DATETIME_ORIGINAL, ExifInterface.TAG_DATETIME_DIGITIZED,
+        ExifInterface.TAG_OFFSET_TIME, ExifInterface.TAG_OFFSET_TIME_ORIGINAL, ExifInterface.TAG_OFFSET_TIME_DIGITIZED,
+        ExifInterface.TAG_SUBSEC_TIME_ORIGINAL, ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL,
+        ExifInterface.TAG_LENS_MAKE, ExifInterface.TAG_LENS_MODEL, ExifInterface.TAG_F_NUMBER,
+        ExifInterface.TAG_EXPOSURE_TIME, ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY, ExifInterface.TAG_FOCAL_LENGTH,
+        ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM, ExifInterface.TAG_FLASH, ExifInterface.TAG_WHITE_BALANCE,
+        ExifInterface.TAG_GPS_LATITUDE, ExifInterface.TAG_GPS_LATITUDE_REF, ExifInterface.TAG_GPS_LONGITUDE,
+        ExifInterface.TAG_GPS_LONGITUDE_REF, ExifInterface.TAG_GPS_ALTITUDE, ExifInterface.TAG_GPS_ALTITUDE_REF,
+        ExifInterface.TAG_GPS_TIMESTAMP, ExifInterface.TAG_GPS_DATESTAMP, ExifInterface.TAG_IMAGE_DESCRIPTION,
+        ExifInterface.TAG_ARTIST, ExifInterface.TAG_COPYRIGHT,
+    )
+
+    /** Reads the photo details from [uri], including location when Android allows it. */
+    fun readExif(uri: Uri): Map<String, String> {
+        val candidates = listOfNotNull(runCatching { MediaStore.setRequireOriginal(uri) }.getOrNull(), uri)
+        for (c in candidates) {
+            try {
+                resolver.openFileDescriptor(c, "r")?.use { pfd ->
+                    val exif = ExifInterface(pfd.fileDescriptor)
+                    return keptExifTags.mapNotNull { tag -> exif.getAttribute(tag)?.let { tag to it } }.toMap()
+                }
+            } catch (e: Exception) {
+                // try the next way of opening it
+            }
+        }
+        return emptyMap()
+    }
+
+    /** Writes [values] into a JPEG, with the picture now the right way up and the new size. */
+    private fun writeExif(uri: Uri, values: Map<String, String>, width: Int, height: Int) {
+        runCatching {
+            resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+                val exif = ExifInterface(pfd.fileDescriptor)
+                values.forEach { (k, v) -> exif.setAttribute(k, v) }
+                exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+                exif.setAttribute(ExifInterface.TAG_PIXEL_X_DIMENSION, width.toString())
+                exif.setAttribute(ExifInterface.TAG_PIXEL_Y_DIMENSION, height.toString())
+                exif.saveAttributes()
+            }
+        }
+    }
+
+    /** Copies the original's details (date, camera, location) onto a saved copy. */
+    suspend fun copyExif(from: Uri, to: Uri, width: Int, height: Int) = withContext(Dispatchers.IO) {
+        val values = readExif(from)
+        if (values.isNotEmpty()) writeExif(to, values, width, height)
+    }
+
+    /**
+     * Replaces the original photo with [bitmap], in the same format, keeping its date,
+     * camera details and location. The caller must already have write permission.
+     */
+    suspend fun overwrite(item: MediaItem, bitmap: Bitmap): Boolean = withContext(Dispatchers.IO) {
+        val format = when (item.mimeType) {
+            "image/png" -> Bitmap.CompressFormat.PNG
+            "image/webp" -> Bitmap.CompressFormat.WEBP_LOSSY
+            else -> Bitmap.CompressFormat.JPEG
+        }
+        val exif = if (format == Bitmap.CompressFormat.JPEG) readExif(item.uri) else emptyMap()
+        // Encode fully in memory first, so a failure can never leave a half-written photo.
+        val bytes = java.io.ByteArrayOutputStream().use { out ->
+            if (!bitmap.compress(format, 95, out)) return@withContext false
+            out.toByteArray()
+        }
+        try {
+            resolver.openOutputStream(item.uri, "wt")?.use { it.write(bytes) } ?: return@withContext false
+        } catch (e: Exception) {
+            return@withContext false
+        }
+        if (format == Bitmap.CompressFormat.JPEG) writeExif(item.uri, exif, bitmap.width, bitmap.height)
+        true
+    }
+
+    /**
+     * Rotates and/or mirrors a JPEG without re-saving the picture: only the orientation
+     * tag changes, so there's no loss of quality and it's instant.
+     */
+    suspend fun rotateLossless(item: MediaItem, degrees: Int, flip: Boolean): Boolean = withContext(Dispatchers.IO) {
+        try {
+            resolver.openFileDescriptor(item.uri, "rw")?.use { pfd ->
+                val exif = ExifInterface(pfd.fileDescriptor)
+                if (degrees % 360 != 0) exif.rotate(degrees)
+                if (flip) exif.flipHorizontally()
+                exif.saveAttributes()
+                true
+            } ?: false
+        } catch (e: Exception) {
+            false
         }
     }
 
