@@ -36,15 +36,18 @@ Updates install over the top of the old version, keeping your favourites. To be 
 
 | | |
 |---|---|
-| **Photos** | Every photo and video, grouped by day. Pinch the grid to make thumbnails bigger or smaller. |
-| **Albums** | One per folder, with Camera and Screenshots first, plus Favourites, Videos and Trash. |
-| **Viewer** | Swipe between items, pinch and double-tap to zoom, play videos. Tap to hide the controls. |
+| **Photos** | Every photo and video, grouped by day. Pinch the grid to make thumbnails bigger or smaller. Choose which folders appear (**⋮ → Choose folders**). |
+| **Albums** | One per folder, with Camera and Screenshots first, plus Favourites, Videos and Trash. Sort by most recent, name or most photos; long-press an album to pin it to the top. |
+| **Smart albums** | **Recently added** (last 7 days), **Old screenshots** (30+ days, ready to clear in one tap) and **Similar photos** (bursts and retakes grouped together, with the sharpest marked *Best*). |
+| **Viewer** | Swipe between items, pinch and double-tap to zoom, play videos, and swipe down to close. The **⋮** menu has Slideshow, Set as wallpaper, Copy and Rename. |
+| **Slideshow** | Photos fade from one to the next, with pause, skip and a choice of 2, 4, 8 or 15 seconds. Start it from an album, Favourites, Recently added or the viewer. |
 | **Organise** | Long-press to select (tap a date to select the whole day), then share, favourite, move to trash, or move/copy to another album or a new one. |
 | **Trash** | Uses Android's own trash: items stay for 30 days and can be restored. |
 | **Details** | Date, size, resolution, folder, camera, exposure settings and GPS location, with an *Open in maps* button. |
 | **Search** | By file name, album, month, year or type. Try `camera june 2024`, `videos`, `favourites` or `screenshots`. |
 | **Map** | Geotagged photos on an OpenStreetMap map, grouped into bubbles. Tap one to see the photos taken there. |
-| **Edit** | Crop (free or fixed ratios), rotate, flip, brightness, contrast, saturation, warmth and 7 filters. Press and hold to compare with the original. Edits are saved as a copy, so originals are never touched. |
+| **Edit** | Crop (free or fixed ratios), rotate, flip, brightness, contrast, saturation, warmth and 7 filters. Press and hold to compare with the original. **Replace original** keeps the date, camera details and location; **Save as copy** keeps the original untouched. |
+| **Hidden folder lock** | Optionally lock hidden folders behind your fingerprint, face or screen lock. They lock again whenever you leave Glimpse. |
 
 ## Permissions and privacy
 
