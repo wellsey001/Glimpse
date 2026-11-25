@@ -140,6 +140,7 @@ fun ZoomableImage(
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(item.uri)
+                .memoryCacheKey("${item.uri}#${item.dateModified}")
                 .size(2560)
                 .build(),
             contentDescription = item.name,

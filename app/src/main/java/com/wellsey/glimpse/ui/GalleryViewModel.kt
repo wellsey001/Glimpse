@@ -270,29 +270,27 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     fun canReplace(item: MediaItem): Boolean =
         !item.isExternal && item.mimeType in setOf("image/jpeg", "image/png", "image/webp")
 
-    /** Only a rotate/flip of a JPEG: done by changing its orientation tag, with no quality loss. */
-    fun canRotateLosslessly(item: MediaItem) = !item.isExternal && item.mimeType == "image/jpeg"
-
-    /**
-     * Saves over the original photo. Android asks you to confirm for photos made by other apps.
-     * Pass [bitmap] for a full re-save, or null with [rotation]/[flip] for a lossless rotate.
-     */
-    fun replaceOriginal(source: MediaItem, bitmap: Bitmap?, rotation: Int, flip: Boolean, onDone: (Boolean) -> Unit) {
+    /** Saves over the original photo. Android asks you to confirm for photos made by other apps. */
+    fun replaceOriginal(source: MediaItem, bitmap: Bitmap, onDone: (Boolean) -> Unit) {
         request(repo.writeRequest(listOf(source.uri))) { ok ->
             if (!ok) {
                 onDone(false); return@request
             }
             viewModelScope.launch {
-                val saved = if (bitmap != null) repo.overwrite(source, bitmap)
-                else repo.rotateLossless(source, rotation, flip)
+                val saved = repo.overwrite(source, bitmap)
                 if (saved) {
+                    repo.rescan(source.uri)
                     // Forget cached pictures of the old version so the new one shows everywhere.
                     getApplication<Application>().imageLoader.memoryCache?.clear()
                     previewJob?.cancel(); previewJob = null; previewUri = null
-                    val fresh = repo.loadMedia()
+                    val now = System.currentTimeMillis() / 1000
+                    val fresh = repo.loadMedia().map {
+                        // If Android hasn't updated the date yet, mark it changed ourselves.
+                        if (it.id == source.id && it.dateModified <= source.dateModified) it.copy(dateModified = now) else it
+                    }
                     _media.value = fresh
                     viewerItems = viewerItems.map { v -> fresh.firstOrNull { it.id == v.id } ?: v }
-                    message("Saved")
+                    message("Saved over the original")
                 } else {
                     message("Couldn't save over the original. Try Save as copy.")
                 }

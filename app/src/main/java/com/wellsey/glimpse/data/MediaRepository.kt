@@ -13,7 +13,11 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.media.MediaScannerConnection
 import androidx.exifinterface.media.ExifInterface
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -302,20 +306,24 @@ class MediaRepository(context: Context) {
     }
 
     /**
-     * Rotates and/or mirrors a JPEG without re-saving the picture: only the orientation
-     * tag changes, so there's no loss of quality and it's instant.
+     * Asks Android to re-read a changed file now, so its size, date and thumbnail update
+     * in Glimpse and in every other app. Waits up to a few seconds for it to finish.
      */
-    suspend fun rotateLossless(item: MediaItem, degrees: Int, flip: Boolean): Boolean = withContext(Dispatchers.IO) {
-        try {
-            resolver.openFileDescriptor(item.uri, "rw")?.use { pfd ->
-                val exif = ExifInterface(pfd.fileDescriptor)
-                if (degrees % 360 != 0) exif.rotate(degrees)
-                if (flip) exif.flipHorizontally()
-                exif.saveAttributes()
-                true
-            } ?: false
-        } catch (e: Exception) {
-            false
+    suspend fun rescan(uri: Uri) {
+        val path = withContext(Dispatchers.IO) {
+            runCatching {
+                @Suppress("DEPRECATION")
+                resolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                }
+            }.getOrNull()
+        } ?: return
+        withTimeoutOrNull(5000) {
+            suspendCancellableCoroutine { cont ->
+                MediaScannerConnection.scanFile(appContext, arrayOf(path), null) { _, _ ->
+                    if (cont.isActive) cont.resume(Unit)
+                }
+            }
         }
     }
 

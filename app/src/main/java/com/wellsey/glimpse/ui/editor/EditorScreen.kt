@@ -131,13 +131,13 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
 
     BackHandler { tryClose() }
 
-    // A rotate or flip on its own can be saved without re-compressing the photo.
-    val onlyRotated = cropRect == FULL_RECT && adjust.isDefault && filter == PhotoFilter.None
+    // Replacing keeps the photo's full resolution whenever there's enough memory for it.
+    val replaceMax = remember(item) { fullSizeLimit(item.width, item.height) }
 
-    /** Builds the finished picture at full size (up to SAVE_MAX), or null if it fails. */
-    suspend fun render(): android.graphics.Bitmap? = withContext(Dispatchers.Default) {
+    /** Builds the finished picture, no bigger than [maxSide] pixels, or null if it fails. */
+    suspend fun render(maxSide: Int = SAVE_MAX): android.graphics.Bitmap? = withContext(Dispatchers.Default) {
         runCatching {
-            val full = decodeBitmap(context, item.uri, SAVE_MAX)
+            val full = decodeBitmap(context, item.uri, maxSide)
             val t = transform(full, rotation, flip)
             val c = crop(t, cropRect)
             if (adjust.isDefault && filter == PhotoFilter.None) c else applyColor(c, matrix)
@@ -165,16 +165,12 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
         showSave = false
         saving = true
         scope.launch {
-            if (onlyRotated && vm.canRotateLosslessly(item)) {
-                vm.replaceOriginal(item, null, rotation, flip) { ok -> saving = false; if (ok) onClose() }
+            val result = render(replaceMax)
+            if (result == null) {
+                saving = false
+                vm.message("Couldn't edit this photo")
             } else {
-                val result = render()
-                if (result == null) {
-                    saving = false
-                    vm.message("Couldn't edit this photo")
-                } else {
-                    vm.replaceOriginal(item, result, 0, false) { ok -> saving = false; if (ok) onClose() }
-                }
+                vm.replaceOriginal(item, result) { ok -> saving = false; if (ok) onClose() }
             }
         }
     }
@@ -348,8 +344,7 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
 
     if (showSave) {
         val canReplace = vm.canReplace(item)
-        val lossless = onlyRotated && vm.canRotateLosslessly(item)
-        val big = item.width.toLong() * item.height > SAVE_MAX.toLong() * SAVE_MAX * 3 / 4
+        val shrinks = item.width > 0 && maxOf(item.width, item.height) > replaceMax
         AlertDialog(
             onDismissRequest = { showSave = false },
             title = { Text("Save changes") },
@@ -358,10 +353,8 @@ fun EditorScreen(vm: GalleryViewModel, item: MediaItem, onClose: () -> Unit) {
                     when {
                         !canReplace -> "This kind of photo (${item.mimeType.substringAfter('/').uppercase()}) can only be saved as a copy. " +
                             "The original stays as it is."
-                        lossless -> "Replace original turns the photo without re-saving it, so there's no loss of quality. " +
-                            "Save as copy keeps the original and adds a new photo next to it."
                         else -> "Replace original saves your edits over the photo, keeping its date, camera details and location. " +
-                            (if (big) "Very large photos are saved at up to $SAVE_MAX pixels wide. " else "") +
+                            (if (shrinks) "This photo is very large, so it will be saved at up to $replaceMax pixels on its longest side. " else "") +
                             "Save as copy keeps the original and adds a new photo next to it."
                     }
                 )
@@ -452,4 +445,14 @@ private fun FilterStrip(
             }
         }
     }
+}
+
+/** The largest side we can safely re-save at: the full photo if memory allows (about three copies are held). */
+private fun fullSizeLimit(width: Int, height: Int): Int {
+    if (width <= 0 || height <= 0) return SAVE_MAX
+    val maxPixels = (Runtime.getRuntime().maxMemory() * 0.05).toLong()
+    val pixels = width.toLong() * height
+    val longest = maxOf(width, height)
+    return if (pixels <= maxPixels) longest
+    else (longest * kotlin.math.sqrt(maxPixels.toDouble() / pixels)).toInt().coerceAtLeast(SAVE_MAX)
 }
