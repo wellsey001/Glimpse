@@ -4,7 +4,14 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.provider.MediaStore
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import androidx.biometric.BiometricManager.Authenticators
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -49,6 +56,8 @@ import com.wellsey.glimpse.ui.editor.EditorScreen
 import com.wellsey.glimpse.ui.screens.Access
 import com.wellsey.glimpse.ui.screens.CollectionScreen
 import com.wellsey.glimpse.ui.screens.FoldersScreen
+import com.wellsey.glimpse.ui.screens.SimilarScreen
+import com.wellsey.glimpse.ui.viewer.SlideshowScreen
 import com.wellsey.glimpse.ui.screens.HomeScreen
 import com.wellsey.glimpse.ui.screens.PermissionScreen
 import com.wellsey.glimpse.ui.screens.TrashScreen
@@ -57,7 +66,7 @@ import com.wellsey.glimpse.ui.screens.mediaPermissions
 import com.wellsey.glimpse.ui.theme.GlimpseTheme
 import com.wellsey.glimpse.ui.viewer.ViewerScreen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val vm: GalleryViewModel by viewModels()
 
@@ -93,6 +102,10 @@ private object Routes {
     const val VIEWER = "viewer"
     const val EDITOR = "editor"
     const val FOLDERS = "folders"
+    const val RECENT = "recent"
+    const val OLD_SCREENSHOTS = "old-screenshots"
+    const val SIMILAR = "similar"
+    const val SLIDESHOW = "slideshow"
 }
 
 @Composable
@@ -183,6 +196,43 @@ private fun Gallery(vm: GalleryViewModel) {
         nav.navigate(Routes.VIEWER)
     }
 
+    /** A "Slideshow" button for a list of photos' top bar. */
+    fun slideshowAction(items: List<MediaItem>): @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        if (items.any { !it.isVideo }) {
+            IconButton(onClick = { vm.openSlideshow(items); nav.navigate(Routes.SLIDESHOW) }) {
+                Icon(Icons.Filled.Slideshow, "Slideshow")
+            }
+        }
+    }
+
+    // Hidden folders lock again whenever Glimpse goes into the background.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.setUnlocked(false) }
+
+    /** Opens a hidden, locked folder only after a fingerprint, face or screen-lock check. */
+    fun unlockThen(bucketId: Long, action: () -> Unit) {
+        if (!vm.isLocked(bucketId)) {
+            action(); return
+        }
+        val activity = context as? FragmentActivity ?: return
+        val prompt = BiometricPrompt(
+            activity,
+            ContextCompat.getMainExecutor(activity),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    vm.setUnlocked(true)
+                    action()
+                }
+            },
+        )
+        prompt.authenticate(
+            BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Unlock hidden folders")
+                .setSubtitle("Hidden folders are locked in Glimpse")
+                .setAllowedAuthenticators(Authenticators.BIOMETRIC_WEAK or Authenticators.DEVICE_CREDENTIAL)
+                .build()
+        )
+    }
+
     NavHost(
         navController = nav,
         startDestination = Routes.HOME,
@@ -197,7 +247,7 @@ private fun Gallery(vm: GalleryViewModel) {
                 access = access,
                 onRequestMoreAccess = { permissionLauncher.launch(mediaPermissions()) },
                 onOpen = openViewer,
-                onOpenAlbum = { nav.navigate("album/$it") },
+                onOpenAlbum = { id -> unlockThen(id) { nav.navigate("album/$id") } },
                 onOpenFavourites = { nav.navigate(Routes.FAVOURITES) },
                 onOpenVideos = { nav.navigate(Routes.VIDEOS) },
                 onOpenTrash = { nav.navigate(Routes.TRASH) },
@@ -206,7 +256,40 @@ private fun Gallery(vm: GalleryViewModel) {
                     nav.navigate(Routes.PLACE)
                 },
                 onChooseFolders = { nav.navigate(Routes.FOLDERS) },
+                onOpenRecent = { nav.navigate(Routes.RECENT) },
+                onOpenOldScreenshots = { nav.navigate(Routes.OLD_SCREENSHOTS) },
+                onOpenSimilar = { nav.navigate(Routes.SIMILAR) },
             )
+        }
+        composable(Routes.RECENT) {
+            val items by vm.recentlyAdded.collectAsStateWithLifecycle()
+            CollectionScreen(
+                vm = vm,
+                title = "Recently added",
+                items = items,
+                onOpen = openViewer,
+                onBack = { nav.popBackStack() },
+                emptyText = "Nothing new in the last 7 days",
+                actions = slideshowAction(items),
+            )
+        }
+        composable(Routes.OLD_SCREENSHOTS) {
+            val items by vm.oldScreenshots.collectAsStateWithLifecycle()
+            CollectionScreen(
+                vm = vm,
+                title = "Old screenshots",
+                items = items,
+                onOpen = openViewer,
+                onBack = { nav.popBackStack() },
+                emptyText = "No screenshots older than 30 days",
+                preselectAll = true,
+            )
+        }
+        composable(Routes.SIMILAR) {
+            SimilarScreen(vm, onBack = { nav.popBackStack() }, onOpen = openViewer)
+        }
+        composable(Routes.SLIDESHOW) {
+            SlideshowScreen(vm, onClose = { nav.popBackStack() })
         }
         composable(Routes.FOLDERS) {
             FoldersScreen(vm, onBack = { nav.popBackStack() })
@@ -227,6 +310,7 @@ private fun Gallery(vm: GalleryViewModel) {
                 onOpen = openViewer,
                 onBack = { nav.popBackStack() },
                 emptyText = "This album is empty",
+                actions = slideshowAction(items),
             )
         }
         composable(Routes.FAVOURITES) {
@@ -238,6 +322,7 @@ private fun Gallery(vm: GalleryViewModel) {
                 onOpen = openViewer,
                 onBack = { nav.popBackStack() },
                 emptyText = "Tap the heart on any photo to add it here",
+                actions = slideshowAction(items),
             )
         }
         composable(Routes.VIDEOS) {
@@ -278,6 +363,7 @@ private fun Gallery(vm: GalleryViewModel) {
             ViewerScreen(
                 vm = vm,
                 onBack = { nav.popBackStack() },
+                onSlideshow = { nav.navigate(Routes.SLIDESHOW) },
                 onEdit = { item ->
                     vm.editorItem = item
                     nav.navigate(Routes.EDITOR)

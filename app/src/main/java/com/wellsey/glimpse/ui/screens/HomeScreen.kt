@@ -76,6 +76,9 @@ fun HomeScreen(
     onOpenTrash: () -> Unit,
     onOpenPlace: (String, List<MediaItem>) -> Unit,
     onChooseFolders: () -> Unit,
+    onOpenRecent: () -> Unit = {},
+    onOpenOldScreenshots: () -> Unit = {},
+    onOpenSimilar: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(HomeTab.Photos) }
     val photosGrid = rememberLazyGridState()
@@ -101,7 +104,10 @@ fun HomeScreen(
         ) {
             when (tab) {
                 HomeTab.Photos -> PhotosTab(vm, access, onRequestMoreAccess, onOpen, photosGrid, onChooseFolders)
-                HomeTab.Albums -> AlbumsScreen(vm, onOpenAlbum, onOpenFavourites, onOpenVideos, onOpenTrash, onChooseFolders)
+                HomeTab.Albums -> AlbumsScreen(
+                    vm, onOpenAlbum, onOpenFavourites, onOpenVideos, onOpenTrash, onChooseFolders,
+                    onOpenRecent, onOpenOldScreenshots, onOpenSimilar,
+                )
                 HomeTab.Map -> MapScreen(
                     vm,
                     onOpenPlace = onOpenPlace,

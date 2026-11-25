@@ -1,5 +1,21 @@
 package com.wellsey.glimpse.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Screenshot
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -50,7 +66,7 @@ import coil.compose.AsyncImage
 import com.wellsey.glimpse.data.MediaThumb
 import com.wellsey.glimpse.ui.GalleryViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AlbumsScreen(
     vm: GalleryViewModel,
@@ -59,8 +75,18 @@ fun AlbumsScreen(
     onOpenVideos: () -> Unit,
     onOpenTrash: () -> Unit,
     onChooseFolders: () -> Unit,
+    onOpenRecent: () -> Unit,
+    onOpenOldScreenshots: () -> Unit,
+    onOpenSimilar: () -> Unit,
 ) {
     val hidden by vm.settings.hiddenFolders.collectAsStateWithLifecycle()
+    val sort by vm.settings.albumSort.collectAsStateWithLifecycle()
+    val pinned by vm.settings.pinnedAlbums.collectAsStateWithLifecycle()
+    val lock by vm.settings.lockHidden.collectAsStateWithLifecycle()
+    val unlocked by vm.unlocked.collectAsStateWithLifecycle()
+    val recent by vm.recentlyAdded.collectAsStateWithLifecycle()
+    val oldShots by vm.oldScreenshots.collectAsStateWithLifecycle()
+    var sortMenu by remember { mutableStateOf(false) }
     val albums by vm.albums.collectAsStateWithLifecycle()
     val favs by vm.favoriteItems.collectAsStateWithLifecycle()
     val media by vm.media.collectAsStateWithLifecycle()
@@ -72,6 +98,23 @@ fun AlbumsScreen(
             TopAppBar(
                 title = { Text("Albums") },
                 actions = {
+                    IconButton(onClick = { sortMenu = true }) { Icon(Icons.AutoMirrored.Filled.Sort, "Sort albums") }
+                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                        listOf("recent" to "Most recent", "name" to "Name", "size" to "Most photos").forEach { (key, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                leadingIcon = { RadioButton(selected = sort == key, onClick = null) },
+                                onClick = { sortMenu = false; vm.settings.setAlbumSort(key) },
+                            )
+                        }
+                        HorizontalDivider()
+                        Text(
+                            "Long-press an album to pin it to the top.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
                     TextButton(onClick = onChooseFolders) {
                         Icon(Icons.Filled.Tune, null)
                         Text(" Folders")
@@ -96,10 +139,36 @@ fun AlbumsScreen(
                     QuickTile(Icons.Filled.Delete, "Trash", null, onOpenTrash, Modifier.weight(1f))
                 }
             }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickTile(Icons.Filled.NewReleases, "Recently added", recent.size, onOpenRecent, Modifier.weight(1f))
+                    QuickTile(Icons.Filled.Screenshot, "Old screenshots", oldShots.size, onOpenOldScreenshots, Modifier.weight(1f))
+                    QuickTile(Icons.Filled.Collections, "Similar", null, onOpenSimilar, Modifier.weight(1f))
+                }
+            }
             items(albums, key = { it.bucketId }) { album ->
-                Column(Modifier.clickable { onOpenAlbum(album.bucketId) }) {
+                val isPinned = album.bucketId in pinned
+                val isLocked = lock && !unlocked && album.bucketId in hidden
+                Column(
+                    Modifier.combinedClickable(
+                        onClick = { onOpenAlbum(album.bucketId) },
+                        onLongClick = {
+                            vm.settings.setPinned(album.bucketId, !isPinned)
+                            vm.message(if (isPinned) "Unpinned ${album.name}" else "Pinned ${album.name} to the top")
+                        },
+                    )
+                ) {
                     Box {
-                        AsyncImage(
+                        if (isLocked) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(Icons.Filled.Lock, "Locked", modifier = Modifier.size(36.dp)) }
+                        } else AsyncImage(
                             model = MediaThumb(album.cover.uri, album.cover.dateModified, 512),
                             contentDescription = album.name,
                             contentScale = ContentScale.Crop,
@@ -108,6 +177,17 @@ fun AlbumsScreen(
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(16.dp)),
                         )
+                        if (isPinned) {
+                            Icon(
+                                Icons.Filled.PushPin, "Pinned", tint = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .background(Color(0xCC000000), RoundedCornerShape(10.dp))
+                                    .padding(5.dp)
+                                    .size(16.dp),
+                            )
+                        }
                         if (album.bucketId in hidden) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -129,7 +209,7 @@ fun AlbumsScreen(
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${album.count}",
+                        if (isLocked) "Locked" else "${album.count}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

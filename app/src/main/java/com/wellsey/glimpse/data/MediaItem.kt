@@ -24,6 +24,8 @@ data class MediaItem(
     val dateExpires: Long = 0,
     /** True when the file came from another app (opened via "Open with") rather than MediaStore. */
     val isExternal: Boolean = false,
+    /** Milliseconds since epoch when the file arrived on the phone (used by "Recently added"). */
+    val dateAdded: Long = 0,
 )
 
 data class Album(

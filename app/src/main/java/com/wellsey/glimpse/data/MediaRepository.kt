@@ -106,6 +106,7 @@ class MediaRepository(context: Context) {
                         name = c.getString(nameCol) ?: "",
                         mimeType = c.getString(mimeCol) ?: if (isVideo) "video/*" else "image/*",
                         dateTaken = if (taken > 0) taken else added,
+                        dateAdded = added,
                         dateModified = c.getLong(modCol),
                         size = c.getLong(sizeCol),
                         width = if (rotated) h else w,
@@ -325,6 +326,39 @@ class MediaRepository(context: Context) {
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------ small actions
+
+    /** Renames a photo, keeping its extension. The caller must already have write permission. */
+    suspend fun rename(item: MediaItem, newBaseName: String): Boolean = withContext(Dispatchers.IO) {
+        val ext = item.name.substringAfterLast('.', "")
+        val name = if (ext.isBlank()) newBaseName else "$newBaseName.$ext"
+        runCatching {
+            resolver.update(item.uri, ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, name) }, null, null) > 0
+        }.getOrDefault(false)
+    }
+
+    /** Sets a photo as the wallpaper. [which] is WallpaperManager.FLAG_SYSTEM, FLAG_LOCK, or both. */
+    suspend fun setWallpaper(item: MediaItem, which: Int): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val wm = android.app.WallpaperManager.getInstance(appContext)
+            resolver.openInputStream(item.uri)?.use { wm.setStream(it, null, true, which) } != null
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Makes a shareable copy for the clipboard. Other apps can only paste from a link Glimpse
+     * can hand out, so the photo is copied into Glimpse's own space first.
+     */
+    suspend fun clipboardCopy(item: MediaItem): Uri? = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = java.io.File(appContext.cacheDir, "clip").apply { deleteRecursively(); mkdirs() }
+            val f = java.io.File(dir, item.name.ifBlank { "photo.jpg" })
+            resolver.openInputStream(item.uri)?.use { input -> f.outputStream().use { input.copyTo(it) } }
+                ?: return@runCatching null
+            androidx.core.content.FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", f)
+        }.getOrNull()
     }
 
     /** Builds a [MediaItem] for a file another app asked us to open. */

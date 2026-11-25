@@ -22,6 +22,7 @@ import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,8 @@ fun CollectionScreen(
     windowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
     gridState: LazyGridState = rememberLazyGridState(),
     showTopBarWhenIdle: Boolean = true,
+    /** Start with everything selected (used by "Old screenshots"). */
+    preselectAll: Boolean = false,
     topBarWindowInsets: WindowInsets? = null,
     actions: @Composable RowScope.() -> Unit = {},
     header: (LazyGridScope.() -> Unit)? = null,
@@ -63,6 +66,13 @@ fun CollectionScreen(
     val columns by vm.settings.columns.collectAsStateWithLifecycle()
     val albums by vm.albums.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf(setOf<Long>()) }
+    var preselected by remember { mutableStateOf(false) }
+    LaunchedEffect(items) {
+        if (preselectAll && !preselected && items.isNotEmpty()) {
+            selected = items.map { it.id }.toSet()
+            preselected = true
+        }
+    }
 
     // Drop selections for items that disappeared (deleted, moved out of this album).
     val visibleSelection = remember(selected, items) {

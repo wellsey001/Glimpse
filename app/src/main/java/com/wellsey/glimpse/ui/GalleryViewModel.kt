@@ -16,6 +16,8 @@ import com.wellsey.glimpse.data.LocationIndex
 import com.wellsey.glimpse.data.MediaItem
 import com.wellsey.glimpse.data.MediaRepository
 import com.wellsey.glimpse.data.SettingsStore
+import com.wellsey.glimpse.data.SimilarFinder
+import com.wellsey.glimpse.data.SimilarGroup
 import com.wellsey.glimpse.ui.editor.decodeBitmap
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +53,10 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     val settings = SettingsStore(app)
     private val locationIndex = LocationIndex(app)
 
+    private val _unlocked = MutableStateFlow(false)
+    /** True after you've unlocked hidden folders, until Glimpse goes into the background. */
+    val unlocked: StateFlow<Boolean> = _unlocked.asStateFlow()
+
     private val _media = MutableStateFlow<List<MediaItem>>(emptyList())
     val media: StateFlow<List<MediaItem>> = _media.asStateFlow()
 
@@ -65,12 +71,117 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         if (hidden.isEmpty()) m else m.filter { it.bucketId !in hidden }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val albums: StateFlow<List<Album>> = media.map(::buildAlbums)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    val favoriteItems: StateFlow<List<MediaItem>> = combine(media, favorites.ids) { m, ids ->
-        m.filter { it.id in ids }
+    /** Albums in your chosen order, with pinned albums first. */
+    val albums: StateFlow<List<Album>> = combine(media, settings.albumSort, settings.pinnedAlbums) { m, sort, pinned ->
+        val all = buildAlbums(m)
+        val sorted = when (sort) {
+            "name" -> all.sortedBy { it.name.lowercase() }
+            "size" -> all.sortedByDescending { it.count }
+            else -> all // most recent first, Camera and Screenshots at the top
+        }
+        sorted.sortedByDescending { it.bucketId in pinned }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Favourites; when hidden folders are locked, their photos stay out until unlocked. */
+    val favoriteItems: StateFlow<List<MediaItem>> = combine(
+        media, favorites.ids, settings.hiddenFolders, settings.lockHidden, unlocked,
+    ) { m, ids, hidden, lock, open ->
+        m.filter { it.id in ids && (!lock || open || it.bucketId !in hidden) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Everything that arrived on the phone in the last 7 days, newest first. */
+    val recentlyAdded: StateFlow<List<MediaItem>> = visibleMedia.map { m ->
+        val since = System.currentTimeMillis() - 7L * 24 * 3600 * 1000
+        m.filter { it.dateAdded >= since }.sortedByDescending { it.dateAdded }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Screenshots more than 30 days old, ready to clear out. */
+    val oldScreenshots: StateFlow<List<MediaItem>> = media.map { m ->
+        val before = System.currentTimeMillis() - 30L * 24 * 3600 * 1000
+        m.filter { isScreenshot(it) && it.dateTaken < before }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // --- Similar photos ---
+    private val similarFinder = SimilarFinder(app)
+    private val _similar = MutableStateFlow<List<SimilarGroup>?>(null)
+    val similar: StateFlow<List<SimilarGroup>?> = _similar.asStateFlow()
+    private val _similarProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val similarProgress: StateFlow<Pair<Int, Int>?> = _similarProgress.asStateFlow()
+    private var similarJob: Job? = null
+
+    fun findSimilar() {
+        if (similarJob?.isActive == true) return
+        similarJob = viewModelScope.launch {
+            _similarProgress.value = 0 to 0
+            _similar.value = similarFinder.find(visibleMedia.value) { d, t -> _similarProgress.value = d to t }
+            _similarProgress.value = null
+        }
+    }
+
+    /** Drops trashed photos from the similar-photos list without scanning again. */
+    fun removeFromSimilar(ids: Set<Long>) {
+        _similar.value = _similar.value?.mapNotNull { g ->
+            val left = g.items.filterNot { it.id in ids }
+            if (left.size < 2) null else SimilarGroup(left, if (g.best.id in ids) left.first() else g.best)
+        }
+    }
+
+    // --- Slideshow ---
+    var slideshowItems by mutableStateOf<List<MediaItem>>(emptyList())
+    var slideshowStart by mutableStateOf(0)
+
+    fun openSlideshow(items: List<MediaItem>, start: Int = 0) {
+        val photos = items.filter { !it.isVideo }
+        val startId = items.getOrNull(start)?.id
+        slideshowItems = photos
+        slideshowStart = photos.indexOfFirst { it.id == startId }.coerceAtLeast(0)
+    }
+
+    // --- Viewer actions ---
+
+    fun rename(item: MediaItem, newBaseName: String) {
+        request(repo.writeRequest(listOf(item.uri))) { ok ->
+            if (!ok) return@request
+            viewModelScope.launch {
+                if (repo.rename(item, newBaseName)) {
+                    val fresh = repo.loadMedia()
+                    _media.value = fresh
+                    viewerItems = viewerItems.map { v -> fresh.firstOrNull { it.id == v.id } ?: v }
+                    message("Renamed")
+                } else message("Couldn't rename: that name may already be taken")
+            }
+        }
+    }
+
+    fun setWallpaper(item: MediaItem, which: Int) {
+        viewModelScope.launch {
+            message("Setting wallpaper…")
+            message(if (repo.setWallpaper(item, which)) "Wallpaper set" else "Couldn't set the wallpaper")
+        }
+    }
+
+    fun copyToClipboard(item: MediaItem) {
+        viewModelScope.launch {
+            val uri = repo.clipboardCopy(item)
+            if (uri == null) {
+                message("Couldn't copy that photo"); return@launch
+            }
+            val app = getApplication<Application>()
+            val cm = app.getSystemService(android.content.ClipboardManager::class.java)
+            cm.setPrimaryClip(android.content.ClipData.newUri(app.contentResolver, item.name, uri))
+            // Android 13+ shows its own "Copied" confirmation.
+            if (android.os.Build.VERSION.SDK_INT < 33) message("Copied. Paste it into a chat or email.")
+        }
+    }
+
+    // --- Lock for hidden folders ---
+
+    fun setUnlocked(value: Boolean) {
+        _unlocked.value = value
+    }
+
+    fun isLocked(bucketId: Long): Boolean =
+        settings.lockHidden.value && !_unlocked.value && bucketId in settings.hiddenFolders.value
 
     // --- Map ---
     private val _geo = MutableStateFlow<Map<Long, Geo>>(emptyMap())
@@ -301,6 +412,10 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val EDIT_PREVIEW_MAX = 1440
+
+        fun isScreenshot(m: MediaItem) =
+            m.bucketName.contains("screenshot", ignoreCase = true) ||
+                m.relativePath.contains("Screenshots", ignoreCase = true)
 
         fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
 

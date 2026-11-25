@@ -50,6 +50,38 @@ class SettingsStore(context: Context) {
     fun setFolderShown(id: Long, shown: Boolean) =
         setHiddenFolders(if (shown) _hiddenFolders.value - id else _hiddenFolders.value + id)
 
+    // ---- Albums: sort order and pinned albums
+    private val _albumSort = MutableStateFlow(prefs.getString("albumSort", "recent") ?: "recent")
+    /** "recent", "name" or "size". */
+    val albumSort: StateFlow<String> = _albumSort.asStateFlow()
+    fun setAlbumSort(v: String) {
+        _albumSort.value = v; prefs.edit().putString("albumSort", v).apply()
+    }
+
+    private val _pinned = MutableStateFlow(
+        prefs.getStringSet("pinnedAlbums", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+    )
+    val pinnedAlbums: StateFlow<Set<Long>> = _pinned.asStateFlow()
+    fun setPinned(id: Long, pinned: Boolean) {
+        val next = if (pinned) _pinned.value + id else _pinned.value - id
+        _pinned.value = next
+        prefs.edit().putStringSet("pinnedAlbums", next.map { it.toString() }.toSet()).apply()
+    }
+
+    // ---- Slideshow speed in seconds
+    private val _slideSeconds = MutableStateFlow(prefs.getInt("slideSeconds", 4))
+    val slideSeconds: StateFlow<Int> = _slideSeconds.asStateFlow()
+    fun setSlideSeconds(v: Int) {
+        _slideSeconds.value = v; prefs.edit().putInt("slideSeconds", v).apply()
+    }
+
+    // ---- Lock for hidden folders (fingerprint, face or screen lock)
+    private val _lockHidden = MutableStateFlow(prefs.getBoolean("lockHidden", false))
+    val lockHidden: StateFlow<Boolean> = _lockHidden.asStateFlow()
+    fun setLockHidden(v: Boolean) {
+        _lockHidden.value = v; prefs.edit().putBoolean("lockHidden", v).apply()
+    }
+
     fun setColumns(value: Int) {
         val v = value.coerceIn(MIN_COLUMNS, MAX_COLUMNS)
         _columns.value = v

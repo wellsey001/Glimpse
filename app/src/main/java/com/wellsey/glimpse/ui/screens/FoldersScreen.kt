@@ -19,6 +19,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -50,6 +51,7 @@ import com.wellsey.glimpse.ui.GalleryViewModel
 fun FoldersScreen(vm: GalleryViewModel, onBack: () -> Unit) {
     val albums by vm.albums.collectAsStateWithLifecycle()
     val hidden by vm.settings.hiddenFolders.collectAsStateWithLifecycle()
+    val lock by vm.settings.lockHidden.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf(false) }
     val shownCount = albums.count { it.bucketId !in hidden }
 
@@ -99,6 +101,23 @@ fun FoldersScreen(vm: GalleryViewModel, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
+            }
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { vm.settings.setLockHidden(!lock) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                ) {
+                    Column0(
+                        title = "Lock hidden folders",
+                        subtitle = "Ask for your fingerprint, face or screen lock before opening them",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = lock, onCheckedChange = { vm.settings.setLockHidden(it) })
+                }
+                HorizontalDivider()
             }
             items(albums, key = { it.bucketId }) { album ->
                 val shown = album.bucketId !in hidden

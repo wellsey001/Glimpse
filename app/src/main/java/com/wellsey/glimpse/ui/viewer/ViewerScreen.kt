@@ -1,6 +1,26 @@
 package com.wellsey.glimpse.ui.viewer
 
 import android.app.Activity
+import android.app.WallpaperManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -62,6 +82,7 @@ fun ViewerScreen(
     vm: GalleryViewModel,
     onBack: () -> Unit,
     onEdit: (MediaItem) -> Unit,
+    onSlideshow: () -> Unit = {},
 ) {
     val items = vm.viewerItems
     val mode = vm.viewerMode
@@ -74,6 +95,14 @@ fun ViewerScreen(
     val pager = rememberPagerState(initialPage = vm.viewerStart.coerceIn(0, items.lastIndex)) { items.size }
     var chrome by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<MediaItem?>(null) }
+    var wallpaperFor by remember { mutableStateOf<MediaItem?>(null) }
+    var zoomed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // Swipe down to close: how far the photo has been pulled, in pixels.
+    val pull = remember { Animatable(0f) }
+    val closeDistance = with(LocalDensity.current) { 140.dp.toPx() }
     val current = items.getOrNull(pager.currentPage.coerceAtMost(items.lastIndex))
 
     // Get the editor's copy ready in the background, so tapping Edit is instant.
@@ -115,13 +144,33 @@ fun ViewerScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(Color.Black.copy(alpha = (1f - abs(pull.value) / (closeDistance * 3)).coerceIn(0.25f, 1f)))
+            .pointerInput(zoomed) {
+                if (zoomed) return@pointerInput
+                detectVerticalDragGestures(
+                    onVerticalDrag = { change, dy ->
+                        change.consume()
+                        scope.launch { pull.snapTo(pull.value + dy) }
+                    },
+                    onDragEnd = {
+                        if (abs(pull.value) > closeDistance) onBack()
+                        else scope.launch { pull.animateTo(0f, spring()) }
+                    },
+                    onDragCancel = { scope.launch { pull.animateTo(0f, spring()) } },
+                )
+            }
     ) {
         HorizontalPager(
             state = pager,
             key = { index -> items.getOrNull(index)?.let { "${it.id}:${it.uri}" } ?: index },
             beyondViewportPageCount = 1,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationY = pull.value
+                    val s = 1f - (abs(pull.value) / (closeDistance * 8)).coerceAtMost(0.15f)
+                    scaleX = s; scaleY = s
+                },
         ) { page ->
             val item = items[page]
             val isCurrent = page == pager.settledPage
@@ -144,7 +193,7 @@ fun ViewerScreen(
                     item = item,
                     isCurrent = isCurrent,
                     onTap = { chrome = !chrome },
-                    onZoomChange = {},
+                    onZoomChange = { zoomed = it },
                 )
             }
         }
@@ -187,6 +236,37 @@ fun ViewerScreen(
                 }
                 IconButton(onClick = { showInfo = true }) {
                     Icon(Icons.Outlined.Info, "Details", tint = Color.White)
+                }
+                if (mode == ViewerMode.Normal && current != null) {
+                    Box {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More", tint = Color.White) }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            if (items.any { !it.isVideo }) {
+                                DropdownMenuItem(
+                                    text = { Text("Slideshow from here") },
+                                    leadingIcon = { Icon(Icons.Filled.Slideshow, null) },
+                                    onClick = { menu = false; vm.openSlideshow(items, pager.currentPage); onSlideshow() },
+                                )
+                            }
+                            if (!current.isVideo) {
+                                DropdownMenuItem(
+                                    text = { Text("Set as wallpaper") },
+                                    leadingIcon = { Icon(Icons.Filled.Wallpaper, null) },
+                                    onClick = { menu = false; wallpaperFor = current },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Copy") },
+                                    leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
+                                    onClick = { menu = false; vm.copyToClipboard(current) },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                leadingIcon = { Icon(Icons.Filled.DriveFileRenameOutline, null) },
+                                onClick = { menu = false; renaming = current },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -236,6 +316,46 @@ fun ViewerScreen(
                 }
             }
         }
+    }
+
+    renaming?.let { item ->
+        var name by remember(item.id) { mutableStateOf(item.name.substringBeforeLast('.')) }
+        val ext = item.name.substringAfterLast('.', "")
+        val valid = name.isNotBlank() && name.none { it in "/\\:*?\"<>|" }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    suffix = { if (ext.isNotBlank()) Text(".$ext") },
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = valid, onClick = { renaming = null; vm.rename(item, name.trim()) }) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
+    }
+    wallpaperFor?.let { item ->
+        AlertDialog(
+            onDismissRequest = { wallpaperFor = null },
+            title = { Text("Set as wallpaper") },
+            text = { Text("The photo is fitted to your screen. Where should it go?") },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { wallpaperFor = null; vm.setWallpaper(item, WallpaperManager.FLAG_SYSTEM) }) { Text("Home screen") }
+                    TextButton(onClick = { wallpaperFor = null; vm.setWallpaper(item, WallpaperManager.FLAG_LOCK) }) { Text("Lock screen") }
+                    TextButton(onClick = {
+                        wallpaperFor = null
+                        vm.setWallpaper(item, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                    }) { Text("Both") }
+                    TextButton(onClick = { wallpaperFor = null }) { Text("Cancel") }
+                }
+            },
+        )
     }
 
     if (showInfo && current != null) {
